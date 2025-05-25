@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="cs">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Karetní hra Blackjack</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+    <h1>BLACKJACK</h1>
+    <div class="wrapper">
+        <div class="sidebar">
+            <h2 id="cash_display">${{ player_cash }}</h2>
+            <h2 id="bet_display">Bet amount: ${{ bet_amount }}</h2>
+            <div id="bet_buttons">
+                <button onclick="adjustBet(1)">+1$</button>
+                <button onclick="adjustBet(10)">+10$</button>
+                <button onclick="adjustBet(100)">+100$</button>
+                <button onclick="adjustBet(1000)">+1000$</button>
+                <button onclick="resetBet()">Reset Bet</button>
+                <button id="final_bet" onclick="confirmBet()">BET</button>
+            </div>
+        </div>
+        <div class="stul">
+            <!-- Dealerova ruka -->
+            <div class="hra2 dealer">
+                <div>DEALER</div>
+                <p id="dealer_counter">{{ dealer_score }}</p>
+                <div class="ruka" id="dealer_ruka">
+                    <!-- Dealerovy karty se přidají až po sázce -->
+                </div>
+            </div>
+
+            <!-- Hráčova ruka -->
+            <div class="hra2 hrac">
+                <div>PLAYER</div>
+                <p id="player_counter">{{ player_score }}</p>
+                <div class="ruka" id="player_ruka">
+                    {% for karta in player_cards %}
+                    <img class="karta" src="{{ karta.image }}" alt="{{ karta.symbol }}">
+                    {% endfor %}
+                </div>
+            </div>
+
+
+            <!-- Ovládací tlačítka -->
+            <div class="controls">
+                <button id="draw_cards" onclick="pridatKartu()" style="display: none;">Hit</button>
+                <button id="stand" onclick="stat()" style="display: none;">Stand</button>
+            </div>
+
+            <button id="restart" onclick="restartHra()" style="display: none;">New game</button>
+        </div>
+    </div>
+    <script>
+
+        let currentBet = 0;
+
+        function adjustBet(amount) {
+            currentBet += amount;
+            document.getElementById("bet_display").textContent = "Bet amount: $" + currentBet;
+        }
+
+        function resetBet() {
+            currentBet = 0;
+            document.getElementById("bet_display").textContent = "Bet amount: $0";
+        }
+
+        function confirmBet() {
+            fetch(`/bet/${currentBet}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+
+                    document.getElementById("cash_display").textContent = "$" + data.player_cash;
+                    document.getElementById("bet_display").textContent = "Bet amount: $" + data.bet_amount;
+                    document.getElementById("bet_buttons").style.display = "none";
+                    document.getElementById("draw_cards").style.display = "inline-block";
+                    document.getElementById("stand").style.display = "inline-block";
+
+                    // Zobraz karty
+                    const playerRuka = document.getElementById("player_ruka");
+                    const dealerRuka = document.getElementById("dealer_ruka");
+                    playerRuka.innerHTML = "";
+                    dealerRuka.innerHTML = "";
+
+                    data.player_cards.forEach(k => {
+                        const img = document.createElement("img");
+                        img.classList.add("karta");
+                        img.src = k.image;
+                        img.alt = k.symbol;
+                        playerRuka.appendChild(img);
+                    });
+
+                    data.dealer_cards.forEach(k => {
+                        const img = document.createElement("img");
+                        img.classList.add("karta");
+                        img.src = k.image;
+                        img.alt = k.symbol;
+                        dealerRuka.appendChild(img);
+                    });
+
+                    document.getElementById("player_counter").textContent = data.player_score;
+                    document.getElementById("dealer_counter").textContent = data.dealer_score;
+
+                    if (data.message) {
+                        setTimeout(() => {
+                            alert(data.message);
+                            clearHands();
+                            updateCashAndReset(data.player_cash);
+                        }, 300);
+                        return;
+                    }
+
+
+                    document.getElementById("draw_cards").style.display = "inline-block";
+                    document.getElementById("stand").style.display = "inline-block";
+
+                    currentBet = 0;
+                });
+        }
+
+
+
+
+        // Přidání nové karty hráči
+        function pridatKartu() {
+            fetch('/tahni_kartu')
+                .then(response => response.json())
+                .then(data => {
+                    const img = document.createElement("img");
+                    img.classList.add("karta");
+                    img.src = data.image;
+                    img.alt = data.symbol;
+                    document.getElementById("player_ruka").appendChild(img);
+
+                    let counter = document.getElementById("player_counter");
+                    counter.textContent = data.player_score;
+
+                    // Pokud hráč přetáhl, zobrazí se alert, ale karta se přidá
+                    if (data.message) {
+                        setTimeout(() => {
+                            alert(data.message);
+                            clearHands();
+                            updateCashAndReset(data.player_cash);
+                        }, 300);
+                        skrytTlacitka(data.restart);
+                    }
+
+                });
+
+
+        }
+
+        function stat() {
+            fetch('/stand')
+                .then(response => response.json())
+                .then(data => {
+
+                    let dealerRuka = document.getElementById("dealer_ruka");
+                    dealerRuka.innerHTML = "";
+
+                    // Pokud máme dealer_hand (není bankrot), zobrazíme karty
+                    if (data.dealer_hand) {
+                        data.dealer_hand.forEach(karta => {
+                            const img = document.createElement("img");
+                            img.classList.add("karta");
+                            img.src = karta.image;
+                            img.alt = karta.symbol;
+                            dealerRuka.appendChild(img);
+                        });
+
+                        document.getElementById("dealer_counter").textContent = data.dealer_score;
+                    }
+
+                    // Počkej chvilku, i kdyby dealer_hand nebyl, a pak řeš alerty
+                    setTimeout(() => {
+                        if (data.restart) {
+                            alert(data.message);
+                            location.href = "/";
+                        } else if (data.message) {
+                            alert(data.message);
+                            location.reload();
+                            clearHands();
+                            updateCashAndReset(data.player_cash);
+                        }
+                    }, 600); // čekání na efekt zobrazení karet
+                });
+        }
+        function skrytTlacitka(restart = false) {
+            document.getElementById("draw_cards").style.display = "none";
+            document.getElementById("stand").style.display = "none";
+
+            if (restart) {
+                document.getElementById("restart").style.display = "block";
+            } else {
+                document.getElementById("bet_buttons").style.display = "block";
+            }
+        }
+
+
+        function restartHra() {
+            fetch('/restart')
+                .then(() => location.href = "/");
+        }
+
+        function bet() {
+            fetch('/bet')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("bet").style.display = "block";
+                    document.getElementById("draw_cards").style.display = "none";
+                    document.getElementById("stand").style.display = "none";
+                });
+        }
+
+        window.onload = () => {
+            const betAmount = parseInt("{{ bet_amount }}");
+            if (!isNaN(betAmount) && betAmount > 0) {
+                document.getElementById("draw_cards").style.display = "inline-block";
+                document.getElementById("stand").style.display = "inline-block";
+                document.getElementById("bet_buttons").style.display = "none";
+            } else {
+                document.getElementById("draw_cards").style.display = "none";
+                document.getElementById("stand").style.display = "none";
+            }
+        };
+
+        function clearHands() {
+            document.getElementById("player_ruka").innerHTML = "";
+            document.getElementById("dealer_ruka").innerHTML = "";
+            document.getElementById("player_counter").textContent = "0";
+            document.getElementById("dealer_counter").textContent = "0";
+        }
+        function updateCashAndReset(newCash) {
+            document.getElementById("cash_display").textContent = "$" + newCash;
+            document.getElementById("bet_buttons").style.display = "block";
+            document.getElementById("bet_display").textContent = "Bet amount: $0";
+        }
+
+    </script>
+
+</body>
+
+</html>
